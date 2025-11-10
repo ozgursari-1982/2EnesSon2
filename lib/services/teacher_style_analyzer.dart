@@ -1,6 +1,8 @@
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/document_analysis.dart';
 import '../models/teacher_style_profile.dart';
 import '../models/test.dart';
@@ -13,7 +15,9 @@ class TeacherStyleAnalyzer {
 
   /// 1. HER BELGE YÜKLENDİĞİNDE - Öğretmen stili için detaylı analiz
   Future<DocumentAnalysis> analyzeDocumentForTeacherStyle({
-    required String filePath,
+    String? filePath, // For mobile
+    Uint8List? fileBytes, // For web
+    String? fileName, // For web (to get extension)
     required String courseName,
     required String documentTitle,
     required String teacherName,
@@ -22,11 +26,22 @@ class TeacherStyleAnalyzer {
     try {
       print('🎓 Öğretmen stili analizi: $documentTitle');
       
-      final file = File(filePath);
-      if (!await file.exists()) throw 'Dosya bulunamadı';
-
-      final bytes = await file.readAsBytes();
-      final extension = filePath.split('.').last.toLowerCase();
+      Uint8List bytes;
+      String extension;
+      
+      if (kIsWeb) {
+        // Web platform
+        if (fileBytes == null) throw 'Web platformunda fileBytes gerekli';
+        bytes = fileBytes;
+        extension = fileName?.split('.').last.toLowerCase() ?? 'jpg';
+      } else {
+        // Mobile platform
+        if (filePath == null) throw 'Mobil platformda filePath gerekli';
+        final file = File(filePath);
+        if (!await file.exists()) throw 'Dosya bulunamadı';
+        bytes = await file.readAsBytes();
+        extension = filePath.split('.').last.toLowerCase();
+      }
       
       String mimeType;
       if (extension == 'pdf') {
@@ -42,57 +57,71 @@ class TeacherStyleAnalyzer {
       final prompt = '''
 🎓 SEN BİR EĞİTİM ANALİZCİSİSİN
 
-GÖREV: Öğretmenin verdiği bu belgeyi analiz et ve öğretim stilini çıkar!
+GÖREV: Bu belgeyi DETAYLI analiz et! BELGEYE ODAKLAN ve BELGEDE YAZANLARI ANALİZ ET!
 
 BELGE: $documentTitle
 DERS: $courseName
 ÖĞRETMEN: $teacherName
 
-DETAYLI ANALİZ:
+⚠️ ÇOK ÖNEMLİ: Belgede GÖRDÜĞÜN her şeyi analiz et! Belgedeki metinleri, soruları, örnekleri, formülleri, görselleri detaylı incele!
 
 1️⃣ BELGE TİPİ: ders_notu/ödev_kağıdı/sınav_kağıdı/çalışma_föyü/kitap_sayfası
 
-2️⃣ KONU ANALİZİ:
-- Ana konu
-- Alt konular (liste)
+2️⃣ BELGE İÇERİĞİ ANALİZİ (BELGEDE NE VAR?):
+- Ana konu (belgede yazılan)
+- Alt konular (belgede geçen tüm konular)
 - Derinlik: yüzeysel/orta/derinlemesine
+- Belgedeki önemli formüller/kurallar (varsa)
+- Belgedeki örnekler/uygulamalar (varsa)
+- Belgedeki vurgular/önemli notlar (varsa)
 
-3️⃣ SORU ANALİZİ (HER SORUYU SAY!):
-Her soru için:
+3️⃣ SORU ANALİZİ (BELGEDEKİ HER SORUYU DETAYLI ANALİZ ET!):
+Belgede gördüğün HER soru için şunları belirt:
 {
   "questionNumber": 1,
-  "type": "hesaplama", // tanım/hesaplama/problem_çözme/analiz/sentez
+  "type": "hesaplama", // tanım/hesaplama/problem_çözme/analiz/sentez/karşılaştırma
   "difficulty": "kolay", // kolay/orta/zor
-  "topic": "Çarpım Tablosu",
+  "topic": "Çarpım Tablosu", // Belgede hangi konuyla ilgili?
   "pageNumber": 1,
-  "preview": "2 x 3 = ?"
+  "fullQuestionText": "Belgede yazılan sorunun TAM METNİ", // SORUNUN TAMAMINI YAZ!
+  "questionContext": "Sorunun belgedeki bağlamı (hangi konu bölümünde, ne amaçla sorulmuş)",
+  "requiredKnowledge": ["Bu soruyu çözmek için gereken bilgiler"],
+  "solutionMethod": "Sorunun çözüm yöntemi (varsa belgede yazılan)",
+  "relatedConcepts": ["Bu soruyla ilişkili kavramlar"],
+  "preview": "Kısa özet"
 }
 
-4️⃣ ÖĞRETMEN STİLİ:
+⚠️ ÖNEMLİ: Eğer belgede soru varsa, sorunun TAM METNİNİ "fullQuestionText" alanına yaz! Sorunun çözümü varsa onu da belirt!
+
+4️⃣ BELGEYE ÖZEL ÖĞRETMEN STİLİ:
 {
-  "emphasizedTopics": ["konu1", "konu2"],
-  "preferredQuestionTypes": ["tip1", "tip2"],
-  "difficultyPreference": "orta_ağırlıklı",
-  "usesVisuals": false,
-  "usesRealLifeExamples": true,
-  "focusOnMemorization": false,
-  "additionalNotes": "notlar"
+  "emphasizedTopics": ["Belgede vurgulanan konular"],
+  "preferredQuestionTypes": ["Belgede görülen soru tipleri"],
+  "difficultyPreference": "Belgedeki soruların zorluk dağılımı",
+  "usesVisuals": false, // Belgede görsel/şema var mı?
+  "usesRealLifeExamples": true, // Belgede gerçek hayat örneği var mı?
+  "focusOnMemorization": false, // Belge ezbere mi odaklı?
+  "teachingApproach": "Belgeden çıkarılan öğretim yaklaşımı",
+  "keyPointsFromDocument": ["Belgede özellikle vurgulanan noktalar"],
+  "additionalNotes": "Belgeye özel notlar"
 }
 
-5️⃣ SINAV TAHMİNİ:
+5️⃣ BELGEDEKİ SORULARA GÖRE SINAV TAHMİNİ:
 {
-  "likelyQuestionCount": 5,
+  "likelyQuestionCount": 5, // Belgedeki soru sayısına göre
   "confidence": 0.8,
-  "reasoning": "açıklama"
+  "reasoning": "Belgedeki sorulara dayalı açıklama",
+  "expectedQuestionTypes": ["Belgede görülen soru tipleri"],
+  "expectedTopics": ["Belgede işlenen konular"]
 }
 
-JSON ÇIKTI (sadece JSON):
+JSON ÇIKTI (sadece JSON, başka metin yok):
 {
   "documentType": "ödev_kağıdı",
   "mainTopic": "Çarpım Tablosu",
   "subTopics": ["2'ler", "5'ler"],
   "topicDepth": "orta",
-  "questions": [...],
+  "questions": [...], // Her soru için fullQuestionText dahil TÜM detaylar
   "teacherStyleInsights": {...},
   "examPredictionHints": {...}
 }

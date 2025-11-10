@@ -1,11 +1,11 @@
 {
-    "name": "ai_teacher_app",
-    "short_name": "ai_teacher_app",
+    "name": "AI Öğretmen",
+    "short_name": "AI Öğretmen",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "AI destekli kişiselleştirilmiş öğretmen uygulaması",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

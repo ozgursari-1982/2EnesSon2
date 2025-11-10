@@ -412,7 +412,7 @@ class MaterialDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             ...difficulties.entries.map((e) {
-              Color color;
+              MaterialColor color;
               if (e.key.toLowerCase().contains('kolay')) {
                 color = Colors.green;
               } else if (e.key.toLowerCase().contains('zor')) {

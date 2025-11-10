@@ -72,6 +72,13 @@ class QuestionAnalysis {
   String topic;
   int pageNumber;
   String preview;
+  
+  // BELGEYE ODAKLI DETAYLI BİLGİLER
+  String fullQuestionText; // Sorunun tam metni
+  String questionContext; // Sorunun belgedeki bağlamı
+  List<String> requiredKnowledge; // Soruyu çözmek için gereken bilgiler
+  String solutionMethod; // Çözüm yöntemi (varsa)
+  List<String> relatedConcepts; // İlişkili kavramlar
 
   QuestionAnalysis({
     required this.questionNumber,
@@ -80,6 +87,11 @@ class QuestionAnalysis {
     required this.topic,
     required this.pageNumber,
     required this.preview,
+    this.fullQuestionText = '',
+    this.questionContext = '',
+    this.requiredKnowledge = const [],
+    this.solutionMethod = '',
+    this.relatedConcepts = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -90,6 +102,11 @@ class QuestionAnalysis {
       'topic': topic,
       'pageNumber': pageNumber,
       'preview': preview,
+      'fullQuestionText': fullQuestionText,
+      'questionContext': questionContext,
+      'requiredKnowledge': requiredKnowledge,
+      'solutionMethod': solutionMethod,
+      'relatedConcepts': relatedConcepts,
     };
   }
 
@@ -101,6 +118,11 @@ class QuestionAnalysis {
       topic: map['topic'] ?? '',
       pageNumber: map['pageNumber'] ?? 0,
       preview: map['preview'] ?? '',
+      fullQuestionText: map['fullQuestionText'] ?? '',
+      questionContext: map['questionContext'] ?? '',
+      requiredKnowledge: List<String>.from(map['requiredKnowledge'] ?? []),
+      solutionMethod: map['solutionMethod'] ?? '',
+      relatedConcepts: List<String>.from(map['relatedConcepts'] ?? []),
     );
   }
 }
@@ -113,6 +135,10 @@ class TeacherStyleInsights {
   bool usesRealLifeExamples;
   bool focusOnMemorization;
   String additionalNotes;
+  
+  // BELGEYE ÖZEL EK BİLGİLER
+  String teachingApproach; // Belgeden çıkarılan öğretim yaklaşımı
+  List<String> keyPointsFromDocument; // Belgede vurgulanan önemli noktalar
 
   TeacherStyleInsights({
     required this.emphasizedTopics,
@@ -122,6 +148,8 @@ class TeacherStyleInsights {
     required this.usesRealLifeExamples,
     required this.focusOnMemorization,
     this.additionalNotes = '',
+    this.teachingApproach = '',
+    this.keyPointsFromDocument = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -133,6 +161,8 @@ class TeacherStyleInsights {
       'usesRealLifeExamples': usesRealLifeExamples,
       'focusOnMemorization': focusOnMemorization,
       'additionalNotes': additionalNotes,
+      'teachingApproach': teachingApproach,
+      'keyPointsFromDocument': keyPointsFromDocument,
     };
   }
 
@@ -145,6 +175,8 @@ class TeacherStyleInsights {
       usesRealLifeExamples: map['usesRealLifeExamples'] ?? false,
       focusOnMemorization: map['focusOnMemorization'] ?? false,
       additionalNotes: map['additionalNotes'] ?? '',
+      teachingApproach: map['teachingApproach'] ?? '',
+      keyPointsFromDocument: List<String>.from(map['keyPointsFromDocument'] ?? []),
     );
   }
 }
@@ -153,11 +185,17 @@ class ExamPredictionHints {
   int likelyQuestionCount;
   double confidence;
   String reasoning;
+  
+  // BELGEDEKİ SORULARA GÖRE EK BİLGİLER
+  List<String> expectedQuestionTypes; // Belgede görülen soru tipleri
+  List<String> expectedTopics; // Belgede işlenen konular
 
   ExamPredictionHints({
     required this.likelyQuestionCount,
     required this.confidence,
     required this.reasoning,
+    this.expectedQuestionTypes = const [],
+    this.expectedTopics = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -165,6 +203,8 @@ class ExamPredictionHints {
       'likelyQuestionCount': likelyQuestionCount,
       'confidence': confidence,
       'reasoning': reasoning,
+      'expectedQuestionTypes': expectedQuestionTypes,
+      'expectedTopics': expectedTopics,
     };
   }
 
@@ -173,6 +213,8 @@ class ExamPredictionHints {
       likelyQuestionCount: map['likelyQuestionCount'] ?? 0,
       confidence: map['confidence']?.toDouble() ?? 0.0,
       reasoning: map['reasoning'] ?? '',
+      expectedQuestionTypes: List<String>.from(map['expectedQuestionTypes'] ?? []),
+      expectedTopics: List<String>.from(map['expectedTopics'] ?? []),
     );
   }
 }

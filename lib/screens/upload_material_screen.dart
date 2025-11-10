@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/course.dart';
@@ -29,7 +31,7 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
   final _teacherAnalyzer = TeacherStyleAnalyzer();
   final _imagePicker = ImagePicker();
 
-  File? _selectedFile;
+  dynamic _selectedFile; // File for mobile, PlatformFile for web
   String? _fileName;
   StudyMaterialType _materialType = StudyMaterialType.note;
   bool _isUploading = false;
@@ -43,13 +45,27 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final XFile? image = await _imagePicker.pickImage(source: source);
-      if (image != null) {
-        setState(() {
-          _selectedFile = File(image.path);
-          _fileName = image.name;
-          _materialType = StudyMaterialType.image;
-        });
+      if (kIsWeb) {
+        // Web'de image_picker çalışmaz, file_picker kullan
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.image,
+        );
+        if (result != null && result.files.single.bytes != null) {
+          setState(() {
+            _selectedFile = result.files.single;
+            _fileName = result.files.single.name;
+            _materialType = StudyMaterialType.image;
+          });
+        }
+      } else {
+        final XFile? image = await _imagePicker.pickImage(source: source);
+        if (image != null) {
+          setState(() {
+            _selectedFile = File(image.path);
+            _fileName = image.name;
+            _materialType = StudyMaterialType.image;
+          });
+        }
       }
     } catch (e) {
       _showError('Resim seçilirken hata oluştu: $e');
@@ -66,11 +82,22 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
         ],
       );
 
-      if (result != null && result.files.single.path != null) {
+      if (result != null) {
         final extension = result.files.single.extension?.toLowerCase() ?? '';
         
         setState(() {
-          _selectedFile = File(result.files.single.path!);
+          if (kIsWeb) {
+            // Web'de PlatformFile kullan
+            _selectedFile = result.files.single;
+          } else {
+            // Mobilde File kullan
+            if (result.files.single.path != null) {
+              _selectedFile = File(result.files.single.path!);
+            } else {
+              _showError('Dosya yolu alınamadı');
+              return;
+            }
+          }
           _fileName = result.files.single.name;
           
           // Dosya türünü otomatik belirle
@@ -123,7 +150,18 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
       final materialId = await _firestoreService.addStudyMaterial(material);
 
       // AI analizi yap (GERÇEK DOSYA İÇERİĞİ ile!)
-      _performAIAnalysis(materialId, _selectedFile!.path);
+      if (kIsWeb) {
+        // Web'de PlatformFile kullan
+        final platformFile = _selectedFile as PlatformFile;
+        _performAIAnalysis(
+          materialId, 
+          fileBytes: platformFile.bytes,
+          fileName: platformFile.name,
+        );
+      } else {
+        // Mobilde File path kullan
+        _performAIAnalysis(materialId, filePath: (_selectedFile as File).path);
+      }
 
       // Update course file count
       await _firestoreService.updateCourse(
@@ -150,18 +188,29 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
     }
   }
 
-  void _performAIAnalysis(String materialId, String localFilePath) async {
+  void _performAIAnalysis(
+    String materialId, {
+    String? filePath,
+    Uint8List? fileBytes,
+    String? fileName,
+  }) async {
     int retryCount = 0;
     const maxRetries = 3;
     
     while (retryCount < maxRetries) {
       try {
         print('🎓 ÖĞRETMEN STİLİ ANALİZİ başlatılıyor (Deneme ${retryCount + 1}/$maxRetries)...');
-        print('📁 Dosya yolu: $localFilePath');
+        if (kIsWeb) {
+          print('📁 Web dosyası: $fileName');
+        } else {
+          print('📁 Dosya yolu: $filePath');
+        }
         
         // ✅ CORRECT: Use teacher style analysis
         final analysisResult = await _teacherAnalyzer.analyzeDocumentForTeacherStyle(
-          filePath: localFilePath,
+          filePath: filePath,
+          fileBytes: fileBytes,
+          fileName: fileName,
           courseName: widget.course.name,
           documentTitle: _titleController.text,
           teacherName: widget.course.teacherName ?? 'Öğretmen',
