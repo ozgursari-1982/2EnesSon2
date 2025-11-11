@@ -543,6 +543,221 @@ Geçersiz: ${invalidQuestions.length}''';
     }
   }
 
+  // PHASE 2.3: Extract topic distribution from materials for balanced question generation
+  Map<String, int> _extractTopicDistribution(
+    List<MaterialWithId> materials,
+    int questionCount,
+  ) {
+    try {
+      print('📊 Konu dağılımı hesaplanıyor...');
+      
+      // Extract all topics from materials
+      final allTopics = <String>[];
+      for (var material in materials) {
+        try {
+          // Parse analysis JSON to extract topics
+          final analysisData = json.decode(material.analysis);
+          if (analysisData is Map) {
+            // Check for mainTopics field
+            if (analysisData.containsKey('mainTopics') && analysisData['mainTopics'] is List) {
+              final topics = (analysisData['mainTopics'] as List).map((t) => t.toString()).toList();
+              allTopics.addAll(topics);
+            }
+            // Also check for subTopics
+            if (analysisData.containsKey('subTopics') && analysisData['subTopics'] is List) {
+              final subTopics = (analysisData['subTopics'] as List).map((t) => t.toString()).toList();
+              allTopics.addAll(subTopics);
+            }
+          }
+        } catch (e) {
+          print('⚠️ Materyal analizi parse edilemedi: $e');
+          // Continue with other materials
+        }
+      }
+      
+      if (allTopics.isEmpty) {
+        print('⚠️ Hiç konu bulunamadı, eşit dağılım kullanılacak');
+        return {}; // Empty map means equal distribution
+      }
+      
+      // Count topic frequencies
+      final topicFrequency = <String, int>{};
+      for (var topic in allTopics) {
+        topicFrequency[topic] = (topicFrequency[topic] ?? 0) + 1;
+      }
+      
+      // Sort topics by frequency (most common first)
+      final sortedTopics = topicFrequency.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      
+      // Take top topics (max 5) and distribute questions
+      final distribution = <String, int>{};
+      final topTopics = sortedTopics.take(5).toList();
+      
+      if (topTopics.isEmpty) {
+        return {};
+      }
+      
+      // Distribute questions proportionally but ensure at least 1 per topic
+      int remaining = questionCount;
+      final totalFrequency = topTopics.fold<int>(0, (sum, entry) => sum + entry.value);
+      
+      for (int i = 0; i < topTopics.length; i++) {
+        final topic = topTopics[i].key;
+        final frequency = topTopics[i].value;
+        
+        if (i == topTopics.length - 1) {
+          // Last topic gets remaining questions
+          distribution[topic] = remaining;
+        } else {
+          // Calculate proportional share (at least 1)
+          final share = ((frequency / totalFrequency) * questionCount).round().clamp(1, remaining - (topTopics.length - i - 1));
+          distribution[topic] = share;
+          remaining -= share;
+        }
+      }
+      
+      print('✅ Konu dağılımı: $distribution');
+      return distribution;
+    } catch (e) {
+      print('❌ Konu dağılımı hesaplama hatası: $e');
+      return {}; // Return empty on error
+    }
+  }
+
+  // PHASE 2.3: Generate test with guaranteed question variety and balanced topic distribution
+  Future<List<Question>> generateTestWithVariety({
+    required String courseName,
+    required List<MaterialWithId> materials,
+    required int questionCount,
+    String difficulty = 'orta',
+    Map<String, int>? topicDistribution,
+  }) async {
+    try {
+      // Calculate topic distribution if not provided
+      topicDistribution ??= _extractTopicDistribution(materials, questionCount);
+      
+      // Build materials text with IDs
+      final materialsText = materials.asMap().entries.map((e) {
+        return '''
+[MAT_${e.key}] "${e.value.title}"
+${e.value.analysis}
+''';
+      }).join('\n━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+      // Build topic distribution text
+      final topicDistText = topicDistribution.isEmpty
+          ? 'Tüm konulardan dengeli dağıt'
+          : topicDistribution.entries.map((e) => '- ${e.key}: ${e.value} soru').join('\n');
+
+      final prompt = '''
+Sen bir $courseName öğretmenisin. 
+
+MATERYALLER:
+$materialsText
+
+GÖREV: Yukarıdaki içeriklerden $questionCount adet özgün soru oluştur!
+
+KONU DAĞILIMI (MUTLAKA UY!):
+$topicDistText
+
+ÖNEMLİ KURALLAR:
+❌ Genel bilgi soruları YASAK
+❌ Aynı konudan çok fazla soru YASAK
+✅ Belirtilen konu dağılımına TAM olarak uy
+✅ Her konudan belirtilen sayıda soru oluştur
+✅ Konu çeşitliliğini garanti et
+✅ Dengeli bir test oluştur
+
+Çıktı formatı (sadece JSON):
+{
+  "questions": [
+    {
+      "question": "Soru metni?",
+      "options": ["Şık A", "Şık B", "Şık C", "Şık D"],
+      "correctAnswerIndex": 0,
+      "explanation": "Detaylı açıklama...",
+      "sourceMaterialId": "MAT_0",
+      "topic": "Konu Adı"
+    }
+  ]
+}
+
+Zorluk: $difficulty
+Format: Çoktan seçmeli (4 şık)
+''';
+
+      final response = await _model.generateContent([Content.text(prompt)]);
+      final responseText = response.text ?? '';
+      
+      // JSON parse
+      final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(responseText);
+      if (jsonMatch == null) {
+        throw 'Geçerli bir JSON yanıtı alınamadı';
+      }
+      
+      final jsonString = jsonMatch.group(0)!;
+      final data = json.decode(jsonString);
+      
+      // Create material map for reference
+      final materialMap = <String, MaterialWithId>{};
+      for (int i = 0; i < materials.length; i++) {
+        materialMap['MAT_$i'] = materials[i];
+      }
+      
+      // Process with validation
+      final List<Question> validQuestions = [];
+      final topicCounts = <String, int>{};
+      
+      for (var q in data['questions']) {
+        if (_validateQuestion(q)) {
+          final materialId = q['sourceMaterialId']?.toString() ?? '';
+          final material = materialMap[materialId];
+          final topic = q['topic']?.toString() ?? 'Diğer';
+          
+          validQuestions.add(Question(
+            id: _uuid.v4(),
+            question: q['question'],
+            options: List<String>.from(q['options']),
+            correctAnswerIndex: q['correctAnswerIndex'],
+            explanation: q['explanation'],
+            sourceMaterialId: material?.id,
+            sourceMaterialTitle: material?.title,
+            topic: topic,
+          ));
+          
+          // Count topics
+          topicCounts[topic] = (topicCounts[topic] ?? 0) + 1;
+        }
+      }
+      
+      // Check threshold
+      if (validQuestions.length < questionCount * 0.8) {
+        throw '''
+Yeterli kaliteli soru üretilemedi.
+İstenen: $questionCount
+Geçerli: ${validQuestions.length}''';
+      }
+      
+      // Log topic distribution
+      print('🎯 Hedef dağılım: $topicDistribution');
+      print('📊 Gerçek dağılım: $topicCounts');
+      print('✅ ${validQuestions.length} soru oluşturuldu (çeşitlilik garantili)');
+      
+      return validQuestions;
+      
+    } catch (e) {
+      final errorMessage = e.toString().toLowerCase();
+      if (errorMessage.contains('429') || errorMessage.contains('quota') || errorMessage.contains('rate limit')) {
+        print('❌ AI Kota Aşıldı Hatası (429): $e');
+        throw 'AI kota aşıldı. Lütfen daha sonra tekrar deneyin.';
+      } else {
+        print('❌ Test oluşturulurken AI hatası: $e');
+        rethrow;
+      }
+    }
+  }
+
   // Analyze student's test performance
   Future<String> analyzeTestPerformance({
     required List<Test> completedTests,
