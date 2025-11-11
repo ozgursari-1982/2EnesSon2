@@ -1,5 +1,6 @@
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../models/test.dart';
+import '../models/material_analysis_result.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:uuid/uuid.dart';
@@ -120,6 +121,129 @@ Türkçe, net ve öğrenci dostu bir dille yaz.
         throw 'AI kota aşıldı. Lütfen daha sonra tekrar deneyin.';
       } else {
         print('❌ AI Dosya Analiz Hatası: $e');
+        rethrow;
+      }
+    }
+  }
+
+  // PHASE 1.2: Analyze study material with STRUCTURED JSON OUTPUT
+  // This method returns structured data instead of free text
+  Future<MaterialAnalysisResult> analyzeStudyMaterialStructured({
+    required String filePath,
+    required String courseName,
+    required String title,
+    String? description,
+  }) async {
+    try {
+      print('🔍 Dosya yapılandırılmış analiz ediliyor: $filePath');
+      
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw 'Dosya bulunamadı: $filePath';
+      }
+
+      final bytes = await file.readAsBytes();
+      
+      // Dosya uzantısını kontrol et
+      final extension = filePath.split('.').last.toLowerCase();
+      String mimeType;
+      
+      if (extension == 'pdf') {
+        mimeType = 'application/pdf';
+      } else if (['jpg', 'jpeg'].contains(extension)) {
+        mimeType = 'image/jpeg';
+      } else if (extension == 'png') {
+        mimeType = 'image/png';
+      } else if (extension == 'webp') {
+        mimeType = 'image/webp';
+      } else if (extension == 'gif') {
+        mimeType = 'image/gif';
+      } else if (extension == 'bmp') {
+        mimeType = 'image/bmp';
+      } else if (['heic', 'heif'].contains(extension)) {
+        mimeType = 'image/heic';
+      } else {
+        throw 'Desteklenmeyen dosya formatı: $extension';
+      }
+
+      final prompt = '''
+Sen bir $courseName öğretmenisin. 
+
+ÖĞRENCİNİN YÜKLEME BİLGİLERİ:
+- Başlık: $title
+${description != null && description.isNotEmpty ? '- Açıklama: $description' : ''}
+- Ders: $courseName
+
+ÇOK ÖNEMLİ: Yukarıdaki bilgiler sadece öğrencinin ne yüklediğini söylüyor. 
+ASIL GÖREVİN: Aşağıdaki GERÇEK DOSYA İÇERİĞİNİ detaylı analiz et!
+
+Çıktı formatı (SADECE JSON, başka metin yok):
+{
+  "mainTopics": ["Konu 1", "Konu 2", "Konu 3"],
+  "keyConcepts": ["Kavram 1", "Kavram 2", "Kavram 3"],
+  "importantPoints": ["Önemli nokta 1", "Önemli nokta 2"],
+  "contentType": "ödev_kağıdı",
+  "contentDetail": "Dosyada ne tür içerik var? Notlar mı, çözümler mi, formüller mi? Detaylı açıkla.",
+  "studyRecommendations": [
+    "Bu içeriğe göre çalışma önerisi 1",
+    "Bu içeriğe göre çalışma önerisi 2"
+  ],
+  "examPreparation": {
+    "questionTypes": ["Hesaplama", "Problem Çözme", "Tanım"],
+    "difficulty": "orta",
+    "estimatedQuestions": 5
+  }
+}
+
+KURALLAR:
+- mainTopics: Dosyada gördüğün ana konular (3-5 madde)
+- keyConcepts: Dosyada yazılan anahtar kavramlar (3-5 madde)
+- importantPoints: Dosyada vurgulanan önemli noktalar (2-4 madde)
+- contentType: "ders_notu", "ödev_kağıdı", "sınav_kağıdı", "çalışma_föyü" veya "kitap_sayfası"
+- contentDetail: İçeriğin detaylı açıklaması
+- studyRecommendations: Bu içeriğe özel çalışma önerileri (2-3 madde)
+- examPreparation.questionTypes: Bu içerikten ne tür sorular sorulabilir
+- examPreparation.difficulty: "kolay", "orta" veya "zor"
+- examPreparation.estimatedQuestions: Sınavda kaç soru çıkabilir (tahmini)
+
+UYARI: Eğer başlık ile dosya içeriği farklıysa, DOSYA İÇERİĞİNİ önceliklendir ve bunu contentDetail'de belirt!
+''';
+
+      // Vision model ile analiz
+      final response = await _model.generateContent([
+        Content.multi([
+          TextPart(prompt),
+          DataPart(mimeType, bytes),
+        ])
+      ]).timeout(
+        const Duration(seconds: 60),
+        onTimeout: () => throw 'AI yanıt süresi aşıldı (60 saniye). Dosya çok büyük olabilir.',
+      );
+      
+      final text = response.text;
+      if (text == null || text.isEmpty) {
+        throw 'AI boş yanıt döndü';
+      }
+      
+      // JSON parse et
+      final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(text);
+      if (jsonMatch == null) {
+        throw 'JSON bulunamadı. AI yanıtı: ${text.substring(0, text.length > 100 ? 100 : text.length)}...';
+      }
+      
+      final jsonString = jsonMatch.group(0)!;
+      final jsonData = json.decode(jsonString);
+      
+      print('✅ Dosya başarıyla yapılandırılmış analiz edildi');
+      return MaterialAnalysisResult.fromJson(jsonData);
+      
+    } catch (e) {
+      final errorMessage = e.toString().toLowerCase();
+      if (errorMessage.contains('429') || errorMessage.contains('quota') || errorMessage.contains('rate limit')) {
+        print('❌ AI Kota Aşıldı Hatası (429): $e');
+        throw 'AI kota aşıldı. Lütfen daha sonra tekrar deneyin.';
+      } else {
+        print('❌ AI Yapılandırılmış Analiz Hatası: $e');
         rethrow;
       }
     }
