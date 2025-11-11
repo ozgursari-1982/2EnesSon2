@@ -30,7 +30,14 @@ class UserStatsWidget extends StatelessWidget {
         }
 
         if (!snapshot.hasData || snapshot.data == null) {
-          return const SizedBox.shrink();
+          // Stats yoksa varsayılan değerlerle göster
+          return _buildStatsCard(
+            context,
+            UserStats(
+              userId: userId,
+              lastActivityDate: DateTime.now(),
+            ),
+          );
         }
 
         final stats = snapshot.data!;

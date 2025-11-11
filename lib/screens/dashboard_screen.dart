@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firestore_service.dart';
 import '../models/course.dart';
+import '../models/test.dart';
 import 'course_detail_screen.dart';
 import 'add_course_screen.dart';
 import 'exam_calendar_screen.dart';
@@ -81,13 +82,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildHomeScreen(String studentId, String studentName) {
     // Anasayfa = İlerleme ve Analiz
     return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Gamification Stats Widget at the top
           UserStatsWidget(userId: studentId),
           const SizedBox(height: 16),
-          // Original Progress Analysis
-          const ProgressAnalysisScreen(),
+          // Progress Analysis içeriği
+          ProgressAnalysisContentWidget(),
         ],
       ),
     );
@@ -173,6 +176,73 @@ class _DashboardScreenState extends State<DashboardScreen> {
       'Aralık'
     ];
     return '${date.day} ${months[date.month - 1]}';
+  }
+}
+
+/// ProgressAnalysisContent için state yönetimi yapan widget
+class ProgressAnalysisContentWidget extends StatefulWidget {
+  const ProgressAnalysisContentWidget({super.key});
+
+  @override
+  State<ProgressAnalysisContentWidget> createState() => _ProgressAnalysisContentWidgetState();
+}
+
+class _ProgressAnalysisContentWidgetState extends State<ProgressAnalysisContentWidget> {
+  final _firestoreService = FirestoreService();
+  bool _isLoading = true;
+  List<Course> _courses = [];
+  Map<String, List<Test>> _courseTests = {};
+  Map<String, double> _courseAverages = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return;
+
+      // Dersleri yükle
+      _courses = await _firestoreService.getCourses(userId);
+
+      // Her ders için testleri yükle
+      for (var course in _courses) {
+        final tests = await _firestoreService.getTests(userId, course.id);
+        final completedTests = tests.where((t) => t.isCompleted).toList();
+        _courseTests[course.id] = completedTests;
+
+        // Ortalama hesapla
+        if (completedTests.isNotEmpty) {
+          final avg = completedTests
+                  .map((t) => t.score ?? 0)
+                  .reduce((a, b) => a + b) /
+              completedTests.length;
+          _courseAverages[course.id] = avg;
+        } else {
+          _courseAverages[course.id] = 0;
+        }
+      }
+    } catch (e) {
+      print('Veri yükleme hatası: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ProgressAnalysisContent(
+      courses: _courses,
+      courseTests: _courseTests,
+      courseAverages: _courseAverages,
+      isLoading: _isLoading,
+      onRefresh: _loadData,
+    );
   }
 }
 

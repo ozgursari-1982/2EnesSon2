@@ -82,60 +82,100 @@ class _ProgressAnalysisScreenState extends State<ProgressAnalysisScreen> {
       );
     }
 
-    final totalTests = _courseTests.values.expand((x) => x).length;
-    final overallAverage = _courseAverages.isEmpty
-        ? 0.0
-        : _courseAverages.values.reduce((a, b) => a + b) /
-            _courseAverages.length;
-
-    final currentUser = FirebaseAuth.instance.currentUser;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('📊 Analiz & İlerleme'),
       ),
       body: RefreshIndicator(
         onRefresh: _loadData,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // User Stats Widget (Gamification)
-              if (currentUser != null)
-                UserStatsWidget(userId: currentUser.uid),
-              const SizedBox(height: 20),
-
-              // Genel Durum Kartı
-              _buildOverviewCard(overallAverage, totalTests),
-              const SizedBox(height: 20),
-
-              // Sınav Geri Sayım
-              _buildExamCountdown(),
-              const SizedBox(height: 20),
-
-              // Ders Bazında Performans Grafiği
-              if (_courses.isNotEmpty) ...[
-                _buildSectionTitle('Ders Bazında Performans'),
-                const SizedBox(height: 12),
-                _buildPerformanceChart(),
-                const SizedBox(height: 20),
-              ],
-
-              // Güçlü/Zayıf Yönler
-              _buildSectionTitle('Güçlü & Zayıf Yönleriniz'),
-              const SizedBox(height: 12),
-              _buildStrengthsWeaknesses(),
-              const SizedBox(height: 20),
-
-              // Detaylı Ders Listesi
-              _buildSectionTitle('Ders Detayları'),
-              const SizedBox(height: 12),
-              ..._courses.map((course) => _buildCourseDetailCard(course)),
-            ],
-          ),
+        child: ProgressAnalysisContent(
+          courses: _courses,
+          courseTests: _courseTests,
+          courseAverages: _courseAverages,
+          isLoading: _isLoading,
+          onRefresh: _loadData,
         ),
+      ),
+    );
+  }
+}
+
+/// Progress Analysis içeriği - Scaffold olmadan widget olarak kullanılabilir
+class ProgressAnalysisContent extends StatelessWidget {
+  final List<Course> courses;
+  final Map<String, List<Test>> courseTests;
+  final Map<String, double> courseAverages;
+  final bool isLoading;
+  final Future<void> Function() onRefresh;
+
+  const ProgressAnalysisContent({
+    super.key,
+    required this.courses,
+    required this.courseTests,
+    required this.courseAverages,
+    required this.isLoading,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final totalTests = courseTests.values.expand((x) => x).length;
+    final overallAverage = courseAverages.isEmpty
+        ? 0.0
+        : courseAverages.values.reduce((a, b) => a + b) /
+            courseAverages.length;
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    DateTime _getClosestExamDate() {
+      DateTime? closest;
+      for (var course in courses) {
+        if (course.nextExamDate != null) {
+          if (closest == null || course.nextExamDate!.isBefore(closest)) {
+            closest = course.nextExamDate;
+          }
+        }
+      }
+      return closest ?? DateTime.now().add(const Duration(days: 30));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Genel Durum Kartı
+          _buildOverviewCard(overallAverage, totalTests),
+          const SizedBox(height: 20),
+
+          // Sınav Geri Sayım
+          _buildExamCountdown(_getClosestExamDate()),
+          const SizedBox(height: 20),
+
+          // Ders Bazında Performans Grafiği
+          if (courses.isNotEmpty) ...[
+            _buildSectionTitle('Ders Bazında Performans'),
+            const SizedBox(height: 12),
+            _buildPerformanceChart(),
+            const SizedBox(height: 20),
+          ],
+
+          // Güçlü/Zayıf Yönler
+          _buildSectionTitle('Güçlü & Zayıf Yönleriniz'),
+          const SizedBox(height: 12),
+          _buildStrengthsWeaknesses(),
+          const SizedBox(height: 20),
+
+          // Detaylı Ders Listesi
+          _buildSectionTitle('Ders Detayları'),
+          const SizedBox(height: 12),
+          ...courses.map((course) => _buildCourseDetailCard(course)),
+        ],
       ),
     );
   }
@@ -207,11 +247,11 @@ class _ProgressAnalysisScreenState extends State<ProgressAnalysisScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatItem('Dersler', '${_courses.length}', Icons.book),
+              _buildStatItem('Dersler', '${courses.length}', Icons.book),
               _buildStatItem('Testler', '$totalTests', Icons.quiz),
               _buildStatItem(
                 'Materyaller',
-                '${_courses.fold(0, (sum, c) => sum + c.uploadedFilesCount)}',
+                '${courses.fold(0, (sum, c) => sum + c.uploadedFilesCount)}',
                 Icons.folder,
               ),
             ],
@@ -245,8 +285,7 @@ class _ProgressAnalysisScreenState extends State<ProgressAnalysisScreen> {
     );
   }
 
-  Widget _buildExamCountdown() {
-    final closestExam = _getClosestExamDate();
+  Widget _buildExamCountdown(DateTime closestExam) {
     final daysLeft = closestExam.difference(DateTime.now()).inDays;
     
     MaterialColor color;
@@ -322,7 +361,7 @@ class _ProgressAnalysisScreenState extends State<ProgressAnalysisScreen> {
   }
 
   Widget _buildPerformanceChart() {
-    if (_courses.isEmpty) {
+    if (courses.isEmpty) {
       return const Card(
         child: Padding(
           padding: EdgeInsets.all(20),
@@ -352,11 +391,11 @@ class _ProgressAnalysisScreenState extends State<ProgressAnalysisScreen> {
                       sideTitles: SideTitles(
                         showTitles: true,
                         getTitlesWidget: (value, meta) {
-                          if (value.toInt() >= _courses.length) return const Text('');
+                          if (value.toInt() >= courses.length) return const Text('');
                           return Padding(
                             padding: const EdgeInsets.only(top: 8.0),
                             child: Text(
-                              _courses[value.toInt()].name,
+                              courses[value.toInt()].name,
                               style: const TextStyle(fontSize: 10),
                               maxLines: 2,
                               textAlign: TextAlign.center,
@@ -383,8 +422,8 @@ class _ProgressAnalysisScreenState extends State<ProgressAnalysisScreen> {
                     horizontalInterval: 20,
                   ),
                   borderData: FlBorderData(show: false),
-                  barGroups: List.generate(_courses.length, (index) {
-                    final average = _courseAverages[_courses[index].id] ?? 0;
+                  barGroups: List.generate(courses.length, (index) {
+                    final average = courseAverages[courses[index].id] ?? 0;
                     Color barColor;
                     if (average >= 70) {
                       barColor = Colors.green;
@@ -419,8 +458,8 @@ class _ProgressAnalysisScreenState extends State<ProgressAnalysisScreen> {
     final strengths = <Course>[];
     final weaknesses = <Course>[];
 
-    for (var course in _courses) {
-      final avg = _courseAverages[course.id] ?? 0;
+    for (var course in courses) {
+      final avg = courseAverages[course.id] ?? 0;
       if (avg >= 70) {
         strengths.add(course);
       } else if (avg > 0) {
@@ -463,7 +502,7 @@ class _ProgressAnalysisScreenState extends State<ProgressAnalysisScreen> {
                             const SizedBox(width: 8),
                             Expanded(child: Text(course.name)),
                             Text(
-                              '${_courseAverages[course.id]?.toStringAsFixed(0)}%',
+                              '${courseAverages[course.id]?.toStringAsFixed(0)}%',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.green.shade700,
@@ -510,7 +549,7 @@ class _ProgressAnalysisScreenState extends State<ProgressAnalysisScreen> {
                             const SizedBox(width: 8),
                             Expanded(child: Text(course.name)),
                             Text(
-                              '${_courseAverages[course.id]?.toStringAsFixed(0)}%',
+                              '${courseAverages[course.id]?.toStringAsFixed(0)}%',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.orange.shade700,
@@ -537,8 +576,8 @@ class _ProgressAnalysisScreenState extends State<ProgressAnalysisScreen> {
   }
 
   Widget _buildCourseDetailCard(Course course) {
-    final tests = _courseTests[course.id] ?? [];
-    final average = _courseAverages[course.id] ?? 0;
+    final tests = courseTests[course.id] ?? [];
+    final average = courseAverages[course.id] ?? 0;
     
     return Card(
       margin: const EdgeInsets.only(bottom: 12),

@@ -31,6 +31,13 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
     setState(() => _isLoading = true);
     
     _allAchievements = await _gamificationService.getAllAchievements();
+    
+    // Eğer başarılar yoksa varsayılanları oluştur
+    if (_allAchievements.isEmpty) {
+      await _gamificationService.initializeDefaultAchievements();
+      _allAchievements = await _gamificationService.getAllAchievements();
+    }
+    
     _userAchievements = await _gamificationService.getUserAchievements(_userId);
     _userStats = await _gamificationService.getUserStats(_userId);
     
@@ -55,6 +62,39 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
       return const Center(child: Text('Veri yüklenemedi'));
     }
 
+    // Başarılar yoksa mesaj göster
+    if (_allAchievements.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.emoji_events_outlined,
+              size: 80,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Henüz başarı tanımlanmamış',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Başarılar yakında eklenecek',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // Başarıları kategorilere göre grupla
     final groupedAchievements = <AchievementCategory, List<Achievement>>{};
     for (final achievement in _allAchievements) {
@@ -70,15 +110,18 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
         
         // Başarı listesi
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              for (final category in groupedAchievements.keys)
-                _buildCategorySection(
-                  category,
-                  groupedAchievements[category]!,
-                ),
-            ],
+          child: RefreshIndicator(
+            onRefresh: _loadData,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                for (final category in groupedAchievements.keys)
+                  _buildCategorySection(
+                    category,
+                    groupedAchievements[category]!,
+                  ),
+              ],
+            ),
           ),
         ),
       ],

@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firebase_auth_service.dart';
 import '../screens/welcome_screen.dart';
 import '../screens/edit_profile_screen.dart';
+import '../screens/achievements_screen.dart';
+import 'leaderboard_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   final String studentId;
@@ -52,6 +54,32 @@ class ProfileScreen extends StatelessWidget {
               ),
               const SizedBox(height: 32),
               // Menu items
+              _buildMenuItem(
+                context,
+                icon: Icons.emoji_events_outlined,
+                title: 'Başarılarım',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AchievementsScreen(),
+                    ),
+                  );
+                },
+              ),
+              _buildMenuItem(
+                context,
+                icon: Icons.leaderboard_outlined,
+                title: 'Sıralama',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const LeaderboardScreen(),
+                    ),
+                  );
+                },
+              ),
               _buildMenuItem(
                 context,
                 icon: Icons.person_outline,
