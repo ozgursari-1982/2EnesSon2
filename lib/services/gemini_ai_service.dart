@@ -125,6 +125,56 @@ Türkçe, net ve öğrenci dostu bir dille yaz.
     }
   }
 
+  // Validate question data before creating Question object
+  bool _validateQuestion(Map<String, dynamic> q) {
+    // 1. Temel alan kontrolleri - Required fields must exist and not be empty
+    if (q['question']?.toString().isEmpty ?? true) {
+      print('⚠️ Validasyon hatası: Soru metni boş');
+      return false;
+    }
+    if (q['explanation']?.toString().isEmpty ?? true) {
+      print('⚠️ Validasyon hatası: Açıklama boş');
+      return false;
+    }
+    
+    // 2. Şık sayısı kontrolü - Must have exactly 4 options
+    final options = q['options'] as List?;
+    if (options == null || options.length != 4) {
+      print('⚠️ Validasyon hatası: Şık sayısı ${options?.length ?? 0} (4 olmalı)');
+      return false;
+    }
+    
+    // 3. Doğru cevap indeksi kontrolü - Must be valid
+    final correctIndex = q['correctAnswerIndex'];
+    if (correctIndex == null || correctIndex is! int || correctIndex < 0 || correctIndex >= 4) {
+      print('⚠️ Validasyon hatası: Geçersiz doğru cevap indeksi: $correctIndex');
+      return false;
+    }
+    
+    // 4. Şık benzersizliği - Options must be unique
+    final uniqueOptions = options.toSet();
+    if (uniqueOptions.length != 4) {
+      print('⚠️ Validasyon hatası: Şıklar benzersiz değil');
+      return false;
+    }
+    
+    // 5. Minimum uzunluk kontrolü - Question must be at least 10 characters
+    if (q['question'].toString().length < 10) {
+      print('⚠️ Validasyon hatası: Soru çok kısa (min 10 karakter)');
+      return false;
+    }
+    
+    // 6. Options minimum length - Each option should have some content
+    for (var option in options) {
+      if (option.toString().trim().isEmpty) {
+        print('⚠️ Validasyon hatası: Boş şık');
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
   // Generate test questions based on materials
   Future<List<Question>> generateTest({
     required String courseName,
@@ -156,7 +206,7 @@ Format: Çoktan seçmeli (4 şık)
 
 ÖRNEKLENDİRME:
 Eğer analizde "toplama işlemi" geçiyorsa, toplamadan sor.
-Eğer analizde "notalar" geçiyorsa, notalardan sor.
+Eğer analizde "notolar" geçiyorsa, notolardan sor.
 Eğer analizde "fiil çekimi" geçiyorsa, fiil çekiminden sor.
 
 Çıktı formatı (sadece JSON, başka metin yok):
@@ -191,18 +241,41 @@ AÇIKLAMA ÖRNEĞİ:
       final jsonString = jsonMatch.group(0)!;
       final data = json.decode(jsonString);
       
-      final List<Question> questions = [];
+      // PHASE 1.1: Add validation - filter valid questions only
+      final List<Question> validQuestions = [];
+      final List<String> invalidQuestions = [];
+      
       for (var q in data['questions']) {
-        questions.add(Question(
-          id: _uuid.v4(),
-          question: q['question'],
-          options: List<String>.from(q['options']),
-          correctAnswerIndex: q['correctAnswerIndex'],
-          explanation: q['explanation'],
-        ));
+        if (_validateQuestion(q)) {
+          validQuestions.add(Question(
+            id: _uuid.v4(),
+            question: q['question'],
+            options: List<String>.from(q['options']),
+            correctAnswerIndex: q['correctAnswerIndex'],
+            explanation: q['explanation'],
+          ));
+        } else {
+          invalidQuestions.add(q['question']?.toString() ?? 'Bilinmeyen soru');
+          print('⚠️ Geçersiz soru atlandı: ${q['question']}');
+        }
       }
       
-      return questions;
+      // Check if we have enough valid questions (at least 80% of requested)
+      if (validQuestions.length < questionCount * 0.8) {
+        throw '''
+Yeterli kaliteli soru üretilemedi.
+İstenen: $questionCount
+Geçerli: ${validQuestions.length}
+Geçersiz: ${invalidQuestions.length}
+Lütfen tekrar deneyin veya farklı materyaller ekleyin.''';
+      }
+      
+      print('✅ ${validQuestions.length} geçerli soru oluşturuldu');
+      if (invalidQuestions.isNotEmpty) {
+        print('⚠️ ${invalidQuestions.length} geçersiz soru atlandı');
+      }
+      
+      return validQuestions;
     } catch (e) {
       final errorMessage = e.toString().toLowerCase();
       if (errorMessage.contains('429') || errorMessage.contains('quota') || errorMessage.contains('rate limit')) {
