@@ -5,6 +5,19 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:uuid/uuid.dart';
 
+// PHASE 1.3: Helper class for material with ID
+class MaterialWithId {
+  final String id;
+  final String title;
+  final String analysis;
+
+  MaterialWithId({
+    required this.id,
+    required this.title,
+    required this.analysis,
+  });
+}
+
 class GeminiAIService {
   late GenerativeModel _model;
   GenerativeModel get model => _model; // Public getter
@@ -400,6 +413,124 @@ Lütfen tekrar deneyin veya farklı materyaller ekleyin.''';
       }
       
       return validQuestions;
+    } catch (e) {
+      final errorMessage = e.toString().toLowerCase();
+      if (errorMessage.contains('429') || errorMessage.contains('quota') || errorMessage.contains('rate limit')) {
+        print('❌ AI Kota Aşıldı Hatası (429): $e');
+        throw 'AI kota aşıldı. Lütfen daha sonra tekrar deneyin.';
+      } else {
+        print('❌ Test oluşturulurken AI hatası: $e');
+        rethrow;
+      }
+    }
+  }
+
+  // PHASE 1.3: Generate test with material reference tracking
+  // This version tracks which material each question came from
+  Future<List<Question>> generateTestWithTracking({
+    required String courseName,
+    required List<MaterialWithId> materials,
+    required int questionCount,
+    String difficulty = 'orta',
+  }) async {
+    try {
+      // Create material map with IDs
+      final materialMap = <String, MaterialWithId>{};
+      for (int i = 0; i < materials.length; i++) {
+        materialMap['MAT_$i'] = materials[i];
+      }
+
+      // Build prompt with material IDs
+      final materialsText = materials.asMap().entries.map((e) {
+        return '''
+[MAT_${e.key}] "${e.value.title}"
+${e.value.analysis}
+''';
+      }).join('\n━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+      final prompt = '''
+Sen bir $courseName öğretmenisin. 
+
+ÇOK ÖNEMLİ: Aşağıda öğrencinin GERÇEK DOSYALARDAN yapılmış AI ANALİZLERİ var.
+
+MATERYALLER:
+$materialsText
+
+GÖREV: Yukarıdaki GERÇEK İÇERİKLERDEN $questionCount adet özgün soru oluştur!
+
+Her soru için "sourceMaterialId" ve "topic" döndür:
+{
+  "questions": [
+    {
+      "question": "Soru metni?",
+      "options": ["Şık A", "Şık B", "Şık C", "Şık D"],
+      "correctAnswerIndex": 0,
+      "explanation": "Detaylı açıklama...",
+      "sourceMaterialId": "MAT_0",
+      "topic": "Konu Adı"
+    }
+  ]
+}
+
+KURALLAR:
+❌ Genel bilgi soruları YASAK
+✅ Öğrencinin yüklediği içeriğe ÖZEL sorular oluştur
+✅ sourceMaterialId: Sorunun hangi materyalden geldiği (MAT_0, MAT_1, vs.)
+✅ topic: Sorunun hangi konuyla ilgili olduğu (örn: "Toplama İşlemi", "Fiil Çekimi")
+
+Zorluk: $difficulty
+Format: Çoktan seçmeli (4 şık)
+''';
+
+      final response = await _model.generateContent([Content.text(prompt)]);
+      final responseText = response.text ?? '';
+      
+      // JSON parse
+      final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(responseText);
+      if (jsonMatch == null) {
+        throw 'Geçerli bir JSON yanıtı alınamadı';
+      }
+      
+      final jsonString = jsonMatch.group(0)!;
+      final data = json.decode(jsonString);
+      
+      // Process with validation and material tracking
+      final List<Question> validQuestions = [];
+      final List<String> invalidQuestions = [];
+      
+      for (var q in data['questions']) {
+        if (_validateQuestion(q)) {
+          // Get material info
+          final materialId = q['sourceMaterialId']?.toString() ?? '';
+          final material = materialMap[materialId];
+          
+          validQuestions.add(Question(
+            id: _uuid.v4(),
+            question: q['question'],
+            options: List<String>.from(q['options']),
+            correctAnswerIndex: q['correctAnswerIndex'],
+            explanation: q['explanation'],
+            sourceMaterialId: material?.id,
+            sourceMaterialTitle: material?.title,
+            topic: q['topic'],
+          ));
+        } else {
+          invalidQuestions.add(q['question']?.toString() ?? 'Bilinmeyen soru');
+        }
+      }
+      
+      // Check threshold
+      if (validQuestions.length < questionCount * 0.8) {
+        throw '''
+Yeterli kaliteli soru üretilemedi.
+İstenen: $questionCount
+Geçerli: ${validQuestions.length}
+Geçersiz: ${invalidQuestions.length}''';
+      }
+      
+      print('✅ ${validQuestions.length} soru oluşturuldu (materyal takipli)');
+      return validQuestions;
+      
     } catch (e) {
       final errorMessage = e.toString().toLowerCase();
       if (errorMessage.contains('429') || errorMessage.contains('quota') || errorMessage.contains('rate limit')) {
