@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/test.dart';
 import '../services/firestore_service.dart';
+import '../services/gamification_service.dart';
+import '../widgets/user_stats_widget.dart';
 import 'test_result_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class TakeTestScreen extends StatefulWidget {
   final Test test;
@@ -14,9 +17,11 @@ class TakeTestScreen extends StatefulWidget {
 
 class _TakeTestScreenState extends State<TakeTestScreen> {
   final _firestoreService = FirestoreService();
+  final _gamificationService = GamificationService();
   final Map<String, int> _selectedAnswers = {};
   int _currentQuestionIndex = 0;
   bool _isSubmitting = false;
+  final DateTime _testStartTime = DateTime.now();
 
   @override
   Widget build(BuildContext context) {
@@ -210,17 +215,46 @@ class _TakeTestScreenState extends State<TakeTestScreen> {
     }
 
     final score = (correctAnswers / widget.test.questions.length) * 100;
+    
+    // Çalışma süresini hesapla (dakika)
+    final studyTimeMinutes = DateTime.now().difference(_testStartTime).inMinutes.clamp(1, 1000);
 
     setState(() => _isSubmitting = true);
 
     try {
+      // Test cevaplarını kaydet
       await _firestoreService.submitTestAnswers(
         widget.test.id,
         answers,
         score,
       );
 
+      // Gamification - Test tamamlandı
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      List<dynamic> unlockedAchievements = [];
+      
+      if (userId != null) {
+        try {
+          unlockedAchievements = await _gamificationService.onTestCompleted(
+            userId,
+            score: score,
+            studyTimeMinutes: studyTimeMinutes,
+          );
+        } catch (e) {
+          print('Gamification hatası: $e');
+        }
+      }
+
       if (mounted) {
+        // Başarılar kazanıldıysa göster
+        if (unlockedAchievements.isNotEmpty) {
+          for (final achievement in unlockedAchievements) {
+            showAchievementDialog(context, achievement);
+            // Her dialog için kısa bir bekleme
+            await Future.delayed(const Duration(seconds: 2));
+          }
+        }
+
         // Test sayfasını kapat ve sonuç ekranını aç
         Navigator.pushReplacement(
           context,
