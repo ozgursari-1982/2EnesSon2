@@ -83,6 +83,7 @@ class GamificationService {
     final updatedStats = stats.copyWith(
       materialsUploaded: newMaterialCount,
       totalPoints: stats.totalPoints + points,
+      currentLevelPoints: stats.currentLevelPoints + points,
       lastActivityDate: DateTime.now(),
     );
 
@@ -115,12 +116,14 @@ class GamificationService {
     final isPerfect = score >= 100.0;
     final testPoints = _calculateTestPoints(score);
     final timePoints = _calculateStudyTimePoints(studyTimeMinutes);
+    final totalNewPoints = testPoints + timePoints;
 
     final updatedStats = stats.copyWith(
       testsCompleted: stats.testsCompleted + 1,
       totalStudyTimeMinutes: stats.totalStudyTimeMinutes + studyTimeMinutes,
       perfectScores: isPerfect ? stats.perfectScores + 1 : stats.perfectScores,
-      totalPoints: stats.totalPoints + testPoints + timePoints,
+      totalPoints: stats.totalPoints + totalNewPoints,
+      currentLevelPoints: stats.currentLevelPoints + totalNewPoints,
       lastActivityDate: DateTime.now(),
     );
 
@@ -163,6 +166,7 @@ class GamificationService {
     final updatedStats = stats.copyWith(
       totalStudyTimeMinutes: stats.totalStudyTimeMinutes + minutes,
       totalPoints: stats.totalPoints + points,
+      currentLevelPoints: stats.currentLevelPoints + points,
       lastActivityDate: DateTime.now(),
     );
 
@@ -201,7 +205,7 @@ class GamificationService {
   /// Seviye kontrolü ve güncelleme
   Future<UserStats> _checkAndUpdateLevel(UserStats stats) async {
     int newLevel = stats.level;
-    int currentPoints = stats.currentLevelPoints + stats.totalPoints - (stats.totalPoints - stats.currentLevelPoints);
+    int currentPoints = stats.currentLevelPoints;
     int nextLevelPoints = stats.nextLevelPoints;
 
     // Seviye atlama kontrolü
@@ -361,6 +365,7 @@ class GamificationService {
     final updatedStats = stats.copyWith(
       totalAchievements: stats.totalAchievements + 1,
       totalPoints: stats.totalPoints + achievement.points,
+      currentLevelPoints: stats.currentLevelPoints + achievement.points,
       unlockedAchievements: [...stats.unlockedAchievements, achievement.id],
     );
 

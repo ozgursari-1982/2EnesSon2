@@ -12,6 +12,8 @@ import '../services/firestore_service.dart';
 import '../services/gemini_ai_service.dart';
 import '../services/teacher_style_analyzer.dart';
 import '../services/automatic_teacher_profile_service.dart';
+import '../services/gamification_service.dart';
+import '../widgets/user_stats_widget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class UploadMaterialScreen extends StatefulWidget {
@@ -33,6 +35,7 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
   final _teacherAnalyzer = TeacherStyleAnalyzer();
   final _imagePicker = ImagePicker();
   final _automaticProfileService = AutomaticTeacherProfileService(); // PHASE 2.2: Add automatic profile service
+  final _gamificationService = GamificationService(); // Gamification service
 
   dynamic _selectedFile; // File for mobile, PlatformFile for web
   String? _fileName;
@@ -172,7 +175,26 @@ class _UploadMaterialScreenState extends State<UploadMaterialScreen> {
         {'uploadedFilesCount': widget.course.uploadedFilesCount + 1},
       );
 
+      // Gamification - Materyal yüklendi
+      List<dynamic> unlockedAchievements = [];
+      try {
+        unlockedAchievements = await _gamificationService.onMaterialUploaded(
+          widget.course.studentId,
+        );
+      } catch (e) {
+        print('Gamification hatası: $e');
+      }
+
       if (mounted) {
+        // Başarılar kazanıldıysa göster
+        if (unlockedAchievements.isNotEmpty) {
+          for (final achievement in unlockedAchievements) {
+            showAchievementDialog(context, achievement);
+            // Her dialog için kısa bir bekleme
+            await Future.delayed(const Duration(seconds: 2));
+          }
+        }
+
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
