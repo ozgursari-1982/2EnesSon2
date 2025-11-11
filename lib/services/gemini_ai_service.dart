@@ -18,6 +18,38 @@ class MaterialWithId {
   });
 }
 
+// PHASE 3.1: Helper class for topic statistics
+class TopicStats {
+  final String topic;
+  int totalQuestions = 0;
+  int correctAnswers = 0;
+
+  TopicStats({required this.topic});
+}
+
+// PHASE 3.1: Weak topic analysis result
+class WeakTopicAnalysis {
+  final String topic;
+  final int totalQuestions;
+  final int correctAnswers;
+  final double successRate;
+  final bool needsReview;
+
+  WeakTopicAnalysis({
+    required this.topic,
+    required this.totalQuestions,
+    required this.correctAnswers,
+    required this.successRate,
+    required this.needsReview,
+  });
+
+  @override
+  String toString() {
+    return '$topic: ${(successRate * 100).toStringAsFixed(1)}% ($correctAnswers/$totalQuestions)';
+  }
+}
+
+
 class GeminiAIService {
   late GenerativeModel _model;
   GenerativeModel get model => _model; // Public getter
@@ -755,6 +787,329 @@ Geçerli: ${validQuestions.length}''';
         print('❌ Test oluşturulurken AI hatası: $e');
         rethrow;
       }
+    }
+  }
+
+  // PHASE 3.2: Get language complexity level based on student grade
+  String _getLanguageComplexity(int? gradeLevel) {
+    if (gradeLevel == null) return 'orta';
+    
+    if (gradeLevel <= 2) {
+      return 'çok basit'; // Very simple for grades 1-2
+    } else if (gradeLevel <= 4) {
+      return 'basit'; // Simple for grades 3-4
+    } else if (gradeLevel <= 6) {
+      return 'orta'; // Medium for grades 5-6
+    } else if (gradeLevel <= 8) {
+      return 'gelişmiş'; // Advanced for grades 7-8
+    } else {
+      return 'akademik'; // Academic for high school+
+    }
+  }
+
+  // PHASE 3.2: Get age-appropriate instructions
+  String _getAgeAppropriateInstructions(int? gradeLevel) {
+    if (gradeLevel == null) return '';
+    
+    if (gradeLevel <= 2) {
+      return '''
+ÖĞRENCİ SEVİYESİ: 1-2. Sınıf (6-8 yaş)
+DİL KURALLARI:
+- Çok kısa ve basit cümleler kullan
+- Günlük hayattan örnekler ver
+- Renkli ve eğlenceli ifadeler kullan
+- Karmaşık kelimeler kullanma
+- Emoji kullan 🌟
+''';
+    } else if (gradeLevel <= 4) {
+      return '''
+ÖĞRENCİ SEVİYESİ: 3-4. Sınıf (8-10 yaş)
+DİL KURALLARI:
+- Basit ve net cümleler kullan
+- Somut örnekler ver
+- Günlük hayattan bağlantılar kur
+- Yavaş yavaş kavram öğret
+''';
+    } else if (gradeLevel <= 6) {
+      return '''
+ÖĞRENCİ SEVİYESİ: 5-6. Sınıf (10-12 yaş)
+DİL KURALLARI:
+- Anlaşılır ama biraz daha gelişmiş dil kullan
+- Hem somut hem soyut örnekler ver
+- Mantıksal düşünmeyi teşvik et
+''';
+    } else if (gradeLevel <= 8) {
+      return '''
+ÖĞRENCİ SEVİYESİ: 7-8. Sınıf (12-14 yaş)
+DİL KURALLARI:
+- Gelişmiş ama açık dil kullan
+- Analitik düşünmeyi destekle
+- Eleştirel sorular sor
+''';
+    } else {
+      return '''
+ÖĞRENCİ SEVİYESİ: Lise ve üzeri (14+ yaş)
+DİL KURALLARI:
+- Akademik düzeyde dil kullanabilirsin
+- Karmaşık kavramları açıklayabilirsin
+- Eleştirel ve analitik düşünme bekleniyor
+''';
+    }
+  }
+
+  // PHASE 3.2: Generate test adapted to student level
+  Future<List<Question>> generateAdaptedTest({
+    required String courseName,
+    required List<MaterialWithId> materials,
+    required int questionCount,
+    String difficulty = 'orta',
+    int? studentGrade,
+    List<Test>? completedTests,
+  }) async {
+    try {
+      // If completedTests provided, use adaptive learning
+      if (completedTests != null && completedTests.isNotEmpty) {
+        return generateAdaptiveTest(
+          courseName: courseName,
+          materials: materials,
+          completedTests: completedTests,
+          questionCount: questionCount,
+          difficulty: difficulty,
+        );
+      }
+      
+      // Otherwise, generate with level adaptation
+      final languageLevel = _getLanguageComplexity(studentGrade);
+      final ageInstructions = _getAgeAppropriateInstructions(studentGrade);
+      
+      print('👶 Öğrenci seviyesi: ${studentGrade ?? "belirsiz"} (Dil: $languageLevel)');
+      
+      // Build materials text
+      final materialsText = materials.asMap().entries.map((e) {
+        return '''
+[MAT_${e.key}] "${e.value.title}"
+${e.value.analysis}
+''';
+      }).join('\n━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+      final prompt = '''
+Sen bir $courseName öğretmenisin. 
+
+$ageInstructions
+
+MATERYALLER:
+$materialsText
+
+GÖREV: Yukarıdaki içeriklerden $questionCount adet özgün soru oluştur!
+
+DİL SEVİYESİ: $languageLevel
+- Sorular ÖĞRENCİNİN YAŞINA UYGUN olmalı
+- Açıklamalar ÖĞRENCİNİN ANLAYABİLECEĞİ DİLDE olmalı
+- Örnekler YAŞA UYGUN olmalı
+
+Zorluk: $difficulty
+Format: Çoktan seçmeli (4 şık)
+
+Çıktı formatı (sadece JSON):
+{
+  "questions": [
+    {
+      "question": "Yaşa uygun soru?",
+      "options": ["Şık A", "Şık B", "Şık C", "Şık D"],
+      "correctAnswerIndex": 0,
+      "explanation": "Yaşa uygun açıklama...",
+      "sourceMaterialId": "MAT_0",
+      "topic": "Konu Adı"
+    }
+  ]
+}
+''';
+
+      final response = await _model.generateContent([Content.text(prompt)]);
+      final responseText = response.text ?? '';
+      
+      // JSON parse
+      final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(responseText);
+      if (jsonMatch == null) {
+        throw 'Geçerli bir JSON yanıtı alınamadı';
+      }
+      
+      final jsonString = jsonMatch.group(0)!;
+      final data = json.decode(jsonString);
+      
+      // Create material map
+      final materialMap = <String, MaterialWithId>{};
+      for (int i = 0; i < materials.length; i++) {
+        materialMap['MAT_$i'] = materials[i];
+      }
+      
+      // Process with validation
+      final List<Question> validQuestions = [];
+      
+      for (var q in data['questions']) {
+        if (_validateQuestion(q)) {
+          final materialId = q['sourceMaterialId']?.toString() ?? '';
+          final material = materialMap[materialId];
+          
+          validQuestions.add(Question(
+            id: _uuid.v4(),
+            question: q['question'],
+            options: List<String>.from(q['options']),
+            correctAnswerIndex: q['correctAnswerIndex'],
+            explanation: q['explanation'],
+            sourceMaterialId: material?.id,
+            sourceMaterialTitle: material?.title,
+            topic: q['topic'],
+          ));
+        }
+      }
+      
+      // Check threshold
+      if (validQuestions.length < questionCount * 0.8) {
+        throw '''
+Yeterli kaliteli soru üretilemedi.
+İstenen: $questionCount
+Geçerli: ${validQuestions.length}''';
+      }
+      
+      print('✅ ${validQuestions.length} soru oluşturuldu (seviye: $languageLevel)');
+      return validQuestions;
+      
+    } catch (e) {
+      final errorMessage = e.toString().toLowerCase();
+      if (errorMessage.contains('429') || errorMessage.contains('quota') || errorMessage.contains('rate limit')) {
+        print('❌ AI Kota Aşıldı Hatası (429): $e');
+        throw 'AI kota aşıldı. Lütfen daha sonra tekrar deneyin.';
+      } else {
+        print('❌ Test oluşturulurken AI hatası: $e');
+        rethrow;
+      }
+    }
+  }
+
+  // PHASE 3.1: Analyze weak topics from past test performance
+  Map<String, WeakTopicAnalysis> analyzeWeakTopics(List<Test> completedTests) {
+    final topicPerformance = <String, TopicStats>{};
+    
+    // Collect statistics for each topic
+    for (var test in completedTests) {
+      for (var question in test.questions) {
+        final topic = question.topic ?? 'Diğer';
+        
+        if (!topicPerformance.containsKey(topic)) {
+          topicPerformance[topic] = TopicStats(topic: topic);
+        }
+        
+        final stats = topicPerformance[topic]!;
+        stats.totalQuestions++;
+        
+        // Check if answer was correct
+        final studentAnswer = test.studentAnswers?[question.id];
+        final isCorrect = studentAnswer != null && 
+                         int.tryParse(studentAnswer) == question.correctAnswerIndex;
+        
+        if (isCorrect) {
+          stats.correctAnswers++;
+        }
+      }
+    }
+    
+    // Calculate weak topics
+    final weakTopics = <String, WeakTopicAnalysis>{};
+    
+    for (var entry in topicPerformance.entries) {
+      final topic = entry.key;
+      final stats = entry.value;
+      
+      if (stats.totalQuestions >= 2) { // At least 2 questions to be statistically relevant
+        final successRate = stats.correctAnswers / stats.totalQuestions;
+        
+        if (successRate < 0.7) { // Below 70% is considered weak
+          weakTopics[topic] = WeakTopicAnalysis(
+            topic: topic,
+            totalQuestions: stats.totalQuestions,
+            correctAnswers: stats.correctAnswers,
+            successRate: successRate,
+            needsReview: successRate < 0.5, // Below 50% needs urgent review
+          );
+        }
+      }
+    }
+    
+    return weakTopics;
+  }
+
+  // PHASE 3.1: Generate adaptive test focusing on weak topics
+  Future<List<Question>> generateAdaptiveTest({
+    required String courseName,
+    required List<MaterialWithId> materials,
+    required List<Test> completedTests,
+    required int questionCount,
+    String difficulty = 'orta',
+  }) async {
+    try {
+      print('🎯 Adaptif test oluşturuluyor...');
+      
+      // Analyze weak topics
+      final weakTopics = analyzeWeakTopics(completedTests);
+      
+      if (weakTopics.isEmpty) {
+        print('✅ Zayıf konu bulunamadı, normal test oluşturuluyor');
+        // No weak topics, generate normal test
+        return generateTestWithVariety(
+          courseName: courseName,
+          materials: materials,
+          questionCount: questionCount,
+          difficulty: difficulty,
+        );
+      }
+      
+      // Calculate adaptive distribution: 60% weak topics, 40% other topics
+      final weakTopicCount = (questionCount * 0.6).round();
+      final otherTopicCount = questionCount - weakTopicCount;
+      
+      print('📊 Adaptif dağılım: $weakTopicCount zayıf konu, $otherTopicCount diğer konular');
+      
+      // Build topic distribution
+      final topicDistribution = <String, int>{};
+      
+      // Distribute weak topic questions based on severity
+      final sortedWeakTopics = weakTopics.entries.toList()
+        ..sort((a, b) => a.value.successRate.compareTo(b.value.successRate)); // Worst first
+      
+      int remaining = weakTopicCount;
+      for (int i = 0; i < sortedWeakTopics.length && remaining > 0; i++) {
+        final topic = sortedWeakTopics[i].key;
+        final share = (remaining / (sortedWeakTopics.length - i)).ceil().clamp(1, remaining);
+        topicDistribution[topic] = share;
+        remaining -= share;
+      }
+      
+      // Extract other topics from materials
+      final allTopics = _extractTopicDistribution(materials, otherTopicCount);
+      for (var entry in allTopics.entries) {
+        if (!topicDistribution.containsKey(entry.key)) {
+          topicDistribution[entry.key] = (topicDistribution[entry.key] ?? 0) + entry.value;
+        }
+      }
+      
+      // Generate test with adaptive distribution
+      final questions = await generateTestWithVariety(
+        courseName: courseName,
+        materials: materials,
+        questionCount: questionCount,
+        difficulty: difficulty,
+        topicDistribution: topicDistribution,
+      );
+      
+      print('✅ Adaptif test oluşturuldu');
+      print('🎯 Zayıf konular: ${weakTopics.keys.join(", ")}');
+      
+      return questions;
+      
+    } catch (e) {
+      print('❌ Adaptif test oluşturma hatası: $e');
+      rethrow;
     }
   }
 
