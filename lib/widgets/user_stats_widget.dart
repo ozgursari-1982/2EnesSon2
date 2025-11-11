@@ -270,7 +270,7 @@ class AchievementUnlockedDialog extends StatelessWidget {
   final Achievement achievement;
 
   const AchievementUnlockedDialog({
-    Key: key,
+    Key? key,
     required this.achievement,
   }) : super(key: key);
 
